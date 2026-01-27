@@ -1,12 +1,17 @@
 """Meeting Memory Assistant - Query interface."""
 
 import os
+import uuid
+
+from dotenv import load_dotenv
 from langchain_chroma import Chroma
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnablePassthrough
 from langchain_core.output_parsers import StrOutputParser
 
 from config import CHROMA_DB_DIR, get_llm, get_embeddings
+
+load_dotenv()
 
 # System prompt for meeting assistant
 SYSTEM_PROMPT = """You are a Meeting Memory Assistant that helps users recall information from their meeting notes.
@@ -33,7 +38,6 @@ def format_docs(docs):
         formatted.append(f"[Source: {source}]\n{doc.page_content}")
     return "\n\n---\n\n".join(formatted)
 
-
 def get_vector_store():
     """Load the existing vector store."""
     if not os.path.exists(CHROMA_DB_DIR):
@@ -46,7 +50,6 @@ def get_vector_store():
         collection_name="meeting_notes",
     )
 
-
 def create_rag_chain(vector_store):
     """Create the RAG chain."""
     retriever = vector_store.as_retriever(
@@ -58,7 +61,10 @@ def create_rag_chain(vector_store):
     llm = get_llm()
     
     chain = (
-        {"context": retriever | format_docs, "question": RunnablePassthrough()}
+        {
+            "context": retriever | format_docs,
+            "question": RunnablePassthrough().with_config(run_name="question_passthrough"),
+        }
         | prompt
         | llm
         | StrOutputParser()
@@ -92,6 +98,9 @@ def main():
     
     # Create RAG chain
     chain = create_rag_chain(vector_store)
+
+    # Creates a unique thread ID for the session
+    thread_id = uuid.uuid4()
     
     # Query loop
     while True:
@@ -106,7 +115,7 @@ def main():
                 break
             
             print("\nAssistant: ", end="", flush=True)
-            response = chain.invoke(question)
+            response = chain.invoke(question, config={"metadata": {"thread_id": thread_id}})
             print(response)
             print()
             
